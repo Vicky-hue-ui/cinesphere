@@ -1,6 +1,6 @@
 # CineSphere
 
-website-link : https://cinesphere-8ff1.onrender.com
+website-link : https://cinesphere-1-kw4e.onrender.com
 
 CineSphere is a movie discovery and tracking web app. Browse and search movies, explore movie details, manage a personal watchlist, record films in a watch diary, write reviews, compare movies, and get curated recommendations through CineChat.
 
