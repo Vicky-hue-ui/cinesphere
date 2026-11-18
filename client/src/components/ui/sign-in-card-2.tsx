@@ -75,8 +75,8 @@ export function SignInCard() {
     } catch (err: any) {
       let message = err?.response?.data?.message;
       if (!message) {
-        if (!err?.response) {
-          message = 'Cannot reach backend server. Please make sure the backend is running on port 5000.';
+        if (!err?.response || !err?.response?.data || typeof err?.response?.data !== 'object') {
+          message = 'Cannot reach backend server. Please verify your backend Web Service is running on Render.';
         } else {
           message = isSignUp
             ? 'Registration failed. Please check your details.'
@@ -102,8 +102,8 @@ export function SignInCard() {
     } catch (err: any) {
       const msg =
         err?.response?.data?.message ||
-        (!err?.response
-          ? 'Cannot reach backend server. Please verify your backend is running on Render.'
+        (!err?.response || typeof err?.response?.data !== 'object'
+          ? 'Cannot reach backend server. Please verify your backend Web Service is running on Render.'
           : 'Google sign-in failed. Please try again.');
       setError(msg);
     } finally {
@@ -112,7 +112,8 @@ export function SignInCard() {
   };
 
   const handleGoogleError = () => {
-    setError('Google sign-in blocked (origin_mismatch). Please add http://localhost:5173 to Authorized JavaScript Origins in Google Cloud Console.');
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://cinesphere-1-kw4e.onrender.com';
+    setError(`Google sign-in blocked (origin_mismatch). Please add "${origin}" to Authorized JavaScript Origins in Google Cloud Console.`);
   };
 
   return (

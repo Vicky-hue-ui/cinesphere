@@ -15,6 +15,8 @@ const app = express();
 // ── Flexible CORS (allows all localhost/127.0.0.1 ports and configured CLIENT_URL) ──
 const allowedOrigins = [
   process.env.CLIENT_URL,
+  'https://cinesphere-1-kw4e.onrender.com',
+  'https://cinesphere-8ff1.onrender.com',
   'http://localhost:5173',
   'http://localhost:5174',
   'http://localhost:3000',
@@ -32,6 +34,13 @@ app.use(
       if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
         return callback(null, true);
       }
+      // Allow any Render deployment origin
+      try {
+        const parsed = new URL(origin);
+        if (parsed.hostname.endsWith('.onrender.com')) {
+          return callback(null, true);
+        }
+      } catch {}
       callback(new Error(`CORS blocked: ${origin}`));
     },
     credentials: true,

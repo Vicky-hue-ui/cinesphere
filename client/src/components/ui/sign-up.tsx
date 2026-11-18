@@ -569,8 +569,8 @@ export const AuthComponent = ({ logo = <DefaultLogo />, brandName = "Moviefy" }:
                         } catch (e: any) {
                           const msg =
                             e?.response?.data?.message ||
-                            (!e?.response
-                              ? 'Cannot reach backend server. Please verify your backend is running on Render.'
+                            (!e?.response || typeof e?.response?.data !== 'object'
+                              ? 'Cannot reach backend server. Please verify your backend Web Service is running on Render.'
                               : 'Google sign-up failed. Please try again.');
                           setModalErrorMessage(msg);
                           setModalStatus('error');
@@ -578,7 +578,8 @@ export const AuthComponent = ({ logo = <DefaultLogo />, brandName = "Moviefy" }:
                       }
                     }}
                     onError={() => {
-                      setModalErrorMessage('Google sign-in popup closed or origin not authorized. Check Google Cloud authorized origins.');
+                      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://cinesphere-1-kw4e.onrender.com';
+                      setModalErrorMessage(`Google sign-in blocked (origin_mismatch). Please ensure "${origin}" is added to Authorized JavaScript Origins in Google Cloud Console.`);
                       setModalStatus('error');
                     }}
                     theme="filled_black"

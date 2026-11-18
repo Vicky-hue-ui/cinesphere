@@ -35,9 +35,26 @@ axiosInstance.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// ── Response interceptor: handle 401 (token expired / invalid) ───────────────
+// ── Response interceptor: handle 401 & static fallback detection ─────────────
 axiosInstance.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Detect if static server answered an API call with an empty body or HTML doc
+    if (
+      typeof response.data === 'string' &&
+      (response.data === '' || response.data.includes('<!DOCTYPE html>'))
+    ) {
+      return Promise.reject({
+        response: {
+          status: 503,
+          data: {
+            message:
+              'Cannot reach backend server. Please verify your backend Web Service is running on Render.',
+          },
+        },
+      });
+    }
+    return response;
+  },
   (error) => {
     if (error.response?.status === 401) {
       // Clear stale auth and redirect to login

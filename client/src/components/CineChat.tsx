@@ -138,11 +138,15 @@ export const CineChat: React.FC = () => {
         })),
       });
 
+      if (!res.data || typeof res.data !== 'object' || !res.data.reply) {
+        throw new Error('Empty or invalid response from backend AI service');
+      }
+
       setMessages((prev: Message[]) => [
         ...prev,
         {
           sender: 'ai',
-          text: res.data.reply || 'Here are some top film recommendations for you!',
+          text: res.data.reply,
           recommendations: res.data.recommendations || [],
         },
       ]);
