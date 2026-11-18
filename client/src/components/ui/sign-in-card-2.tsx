@@ -73,9 +73,16 @@ export function SignInCard() {
       }
       navigate('/profile');
     } catch (err: any) {
-      const message =
-        err?.response?.data?.message ||
-        (isSignUp ? 'Registration failed. Please check your details.' : 'Invalid email or password');
+      let message = err?.response?.data?.message;
+      if (!message) {
+        if (!err?.response) {
+          message = 'Cannot reach backend server. Please make sure the backend is running on port 5000.';
+        } else {
+          message = isSignUp
+            ? 'Registration failed. Please check your details.'
+            : 'Invalid email or password';
+        }
+      }
       setError(message);
     } finally {
       setIsLoading(false);
@@ -101,7 +108,7 @@ export function SignInCard() {
   };
 
   const handleGoogleError = () => {
-    setError('Google sign-in was unsuccessful. Try again.');
+    setError('Google sign-in blocked (origin_mismatch). Please add http://localhost:5173 to Authorized JavaScript Origins in Google Cloud Console.');
   };
 
   return (

@@ -229,7 +229,11 @@ export const AuthComponent = ({ logo = <DefaultLogo />, brandName = "Moviefy" }:
         }, 1500);
       }, totalDuration);
     } catch (err: any) {
-      const msg = err?.response?.data?.message || "Registration failed. Please check your credentials.";
+      const msg =
+        err?.response?.data?.message ||
+        (!err?.response
+          ? 'Cannot reach backend server. Please make sure the backend is running on port 5000.'
+          : 'Registration failed. Please check your credentials.');
       setModalErrorMessage(msg);
       setModalStatus('error');
     }
