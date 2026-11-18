@@ -98,7 +98,7 @@ app.use('/api/diary', requireDatabase, require('./routes/diaryRoutes'));
 app.use('/api/ai', aiRateLimiter, require('./routes/aiRoutes'));
 
 // ── Health Check ──────────────────────────────────────────────────────────────
-app.get('/', (req, res) =>
+app.get('/api/health', (req, res) =>
   res.json({
     status: 'CineSphere API is running',
     version: '2.0.0',
@@ -107,9 +107,32 @@ app.get('/', (req, res) =>
   })
 );
 
-// ── 404 Handler ───────────────────────────────────────────────────────────────
-app.use((req, res) =>
-  res.status(404).json({ message: `Route ${req.originalUrl} not found` })
+// ── Serve React Frontend in Production (if built) ─────────────────────────────
+const path = require('path');
+const fs = require('fs');
+const clientDist = path.join(__dirname, '../client/dist');
+
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
+} else {
+  // If no frontend build found, root route shows API status
+  app.get('/', (req, res) =>
+    res.json({
+      status: 'CineSphere API is running',
+      version: '2.0.0',
+      database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+      gemini: process.env.GEMINI_API_KEY ? 'configured' : 'fallback-mode',
+    })
+  );
+}
+
+// ── 404 Handler for API routes ────────────────────────────────────────────────
+app.use('/api/*', (req, res) =>
+  res.status(404).json({ message: `API route ${req.originalUrl} not found` })
 );
 
 // ── Global Error Handler ──────────────────────────────────────────────────────
