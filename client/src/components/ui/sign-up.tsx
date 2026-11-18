@@ -567,7 +567,11 @@ export const AuthComponent = ({ logo = <DefaultLogo />, brandName = "Moviefy" }:
                           await googleLogin(res.credential);
                           navigate('/profile');
                         } catch (e: any) {
-                          const msg = e?.response?.data?.message || 'Google sign-up failed. Ensure server is running on port 5000.';
+                          const msg =
+                            e?.response?.data?.message ||
+                            (!e?.response
+                              ? 'Cannot reach backend server. Please verify your backend is running on Render.'
+                              : 'Google sign-up failed. Please try again.');
                           setModalErrorMessage(msg);
                           setModalStatus('error');
                         }

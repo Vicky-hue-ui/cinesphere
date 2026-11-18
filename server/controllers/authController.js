@@ -5,6 +5,15 @@ const { OAuth2Client } = require('google-auth-library');
 
 const getGoogleClient = () => new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
+// Safe JWT Secret fallback to avoid server crash if JWT_SECRET is unset in Render environment
+const getJwtSecret = () => process.env.JWT_SECRET || 'cinesphere_default_secret_jwt_key_2024_secure';
+
+const generateToken = (userId, expiresIn = '7d') => {
+  return jwt.sign({ id: userId }, getJwtSecret(), {
+    expiresIn: process.env.JWT_EXPIRES_IN || expiresIn,
+  });
+};
+
 // Email regex validation
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -52,9 +61,7 @@ const signup = async (req, res) => {
     });
 
     // 4. Generate JWT token
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: process.env.JWT_EXPIRES_IN || '7d',
-    });
+    const token = generateToken(user._id, '7d');
 
     res.status(201).json({
       _id: user._id,
@@ -63,7 +70,8 @@ const signup = async (req, res) => {
       token,
     });
   } catch (error) {
-    res.status(500).json({ message: 'Registration failed. Please try again later.' });
+    console.error('Registration Error:', error.message);
+    res.status(500).json({ message: error.message || 'Registration failed. Please try again later.' });
   }
 };
 
@@ -101,9 +109,7 @@ const login = async (req, res) => {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: process.env.JWT_EXPIRES_IN || '7d',
-    });
+    const token = generateToken(user._id, '7d');
 
     res.json({
       _id: user._id,
@@ -112,7 +118,8 @@ const login = async (req, res) => {
       token,
     });
   } catch (error) {
-    res.status(500).json({ message: 'Login failed. Please try again later.' });
+    console.error('Login Error:', error.message);
+    res.status(500).json({ message: error.message || 'Login failed. Please try again later.' });
   }
 };
 
@@ -207,9 +214,7 @@ const googleAuth = async (req, res) => {
       }
     }
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: process.env.JWT_EXPIRES_IN || '30d',
-    });
+    const token = generateToken(user._id, '30d');
 
     res.json({
       _id: user._id,
@@ -220,7 +225,9 @@ const googleAuth = async (req, res) => {
     });
   } catch (error) {
     console.error('Google Auth Error:', error);
-    res.status(500).json({ message: 'Google authentication failed. Please try again.' });
+    res.status(500).json({
+      message: error.message || 'Google authentication failed. Please try again.',
+    });
   }
 };
 

@@ -100,7 +100,11 @@ export function SignInCard() {
       await googleLogin(credentialResponse.credential);
       navigate('/profile');
     } catch (err: any) {
-      const msg = err?.response?.data?.message || 'Google sign-in failed. Please try again.';
+      const msg =
+        err?.response?.data?.message ||
+        (!err?.response
+          ? 'Cannot reach backend server. Please verify your backend is running on Render.'
+          : 'Google sign-in failed. Please try again.');
       setError(msg);
     } finally {
       setIsLoading(false);
