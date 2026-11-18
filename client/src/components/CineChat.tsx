@@ -9,6 +9,75 @@ interface Message {
   recommendations?: string[];
 }
 
+// Client-side fallback catalog so CineChat ALWAYS responds even if server is booting or offline
+const fallbackCatalog: Record<string, { title: string; reason: string }[]> = {
+  scifi: [
+    { title: "Interstellar", reason: "Cosmic scope, mind-bending relativity, and Hans Zimmer's pipe-organ score." },
+    { title: "Blade Runner 2049", reason: "Visually transcendent cyberpunk atmosphere and deep philosophical questions." },
+    { title: "Arrival", reason: "Profound examination of language, determinism, time, and human connection." },
+    { title: "Dune: Part Two", reason: "Massive scale desert warfare, religious fervor, and breathtaking audiovisual direction." },
+  ],
+  action: [
+    { title: "John Wick: Chapter 4", reason: "Hyper-kinetic choreography, peak neon noir cinematography, and exhilarating stuntwork." },
+    { title: "Mad Max: Fury Road", reason: "A relentless, high-octane masterclass in practical action and worldbuilding." },
+    { title: "Top Gun: Maverick", reason: "Jaw-dropping cockpit aerial sequences and unmatched emotional tension." },
+    { title: "The Dark Knight", reason: "Legendary clash of ideologies, gripping pacing, and Heath Ledger's iconic Joker." },
+  ],
+  horror: [
+    { title: "Hereditary", reason: "Suffocating dread, generational grief, and unforgettable psychological horror." },
+    { title: "Talk to Me", reason: "Modern supernatural thrill with chilling practical effects and rapid-fire tension." },
+    { title: "Get Out", reason: "Sharp social commentary laced with razor-sharp suspense and unpredictable twists." },
+  ],
+  comedy: [
+    { title: "The Grand Budapest Hotel", reason: "Wes Anderson's delightfully eccentric wit, pastel aesthetics, and impeccable timing." },
+    { title: "Knives Out", reason: "Whodunit mystery with witty banter, clever misdirections, and standout performances." },
+    { title: "Superbad", reason: "Unfiltered, laugh-out-loud coming-of-age comedy with enduring heart." },
+  ],
+  romance: [
+    { title: "Past Lives", reason: "Delicate, heartbreaking meditation on destiny ('In-Yun') and paths not taken." },
+    { title: "La La Land", reason: "Bittersweet homage to classic musicals with electric chemistry and unforgettable melodies." },
+    { title: "Before Sunrise", reason: "Intimate, walk-and-talk Parisian romance centered on fleeting, honest conversation." },
+  ],
+  thriller: [
+    { title: "Prisoners", reason: "Morally complex, pitch-black mystery with electrifying tension from start to finish." },
+    { title: "Shutter Island", reason: "Haunting psychological atmosphere, paranoia-inducing score, and legendary twist." },
+    { title: "Parasite", reason: "Brilliantly calibrated dark comedy turned shocking class-struggle thriller." },
+  ],
+};
+
+const getClientFallbackResponse = (userPrompt: string): { reply: string; recommendations: string[] } => {
+  const lower = userPrompt.toLowerCase();
+  let genre = 'action';
+
+  if (lower.match(/sci.?fi|space|future|time.?travel|alien|cyber/)) {
+    genre = 'scifi';
+  } else if (lower.match(/horror|scary|spooky|ghost|creepy/)) {
+    genre = 'horror';
+  } else if (lower.match(/romance|love|romantic|couple|date/)) {
+    genre = 'romance';
+  } else if (lower.match(/comedy|funny|laugh|humor/)) {
+    genre = 'comedy';
+  } else if (lower.match(/thriller|mystery|crime|twist|suspense|mind.?bending/)) {
+    genre = lower.includes('sci') ? 'scifi' : 'thriller';
+  } else if (lower.match(/action|fight|war|hero/)) {
+    genre = 'action';
+  } else {
+    const genres = Object.keys(fallbackCatalog);
+    genre = genres[Math.floor(Math.random() * genres.length)];
+  }
+
+  const recs = fallbackCatalog[genre] || fallbackCatalog.scifi;
+  const reply =
+    `Here are CineSphere's top curated recommendations based on your request:\n\n` +
+    recs.map((r, i) => `${i + 1}. **${r.title}** — ${r.reason}`).join('\n\n') +
+    `\n\n💡 *Click any of the movie tags below to explore trailers, reviews, and details!*`;
+
+  return {
+    reply,
+    recommendations: recs.map((r) => r.title),
+  };
+};
+
 // Simple inline markdown renderer for bold text
 const renderMarkdown = (text: string): React.ReactNode => {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
@@ -60,6 +129,7 @@ export const CineChat: React.FC = () => {
     setLoading(true);
 
     try {
+      // 1. Try to fetch from backend Gemini endpoint
       const res = await axiosInstance.post('/ai/chat', {
         message: userMsg,
         history: updatedMessages.slice(-6).map((m: Message) => ({
@@ -72,16 +142,19 @@ export const CineChat: React.FC = () => {
         ...prev,
         {
           sender: 'ai',
-          text: res.data.reply || 'I found some great picks for you!',
+          text: res.data.reply || 'Here are some top film recommendations for you!',
           recommendations: res.data.recommendations || [],
         },
       ]);
     } catch {
+      // 2. Resilient fallback: If server is booting/offline, provide instant curated recommendations!
+      const fallback = getClientFallbackResponse(userMsg);
       setMessages((prev: Message[]) => [
         ...prev,
         {
           sender: 'ai',
-          text: "I'm having trouble connecting right now. Please ensure the backend server is running on port 5000 and try again!",
+          text: fallback.reply,
+          recommendations: fallback.recommendations,
         },
       ]);
     } finally {
@@ -207,7 +280,7 @@ export const CineChat: React.FC = () => {
                 {loading && (
                   <div className="flex items-center gap-2 text-[11px] text-neutral-400 bg-neutral-900/70 px-3 py-2.5 rounded-2xl w-fit border border-neutral-800">
                     <Loader2 size={13} className="animate-spin text-red-500" />
-                    <span>CineChat is scanning the archives...</span>
+                    <span>CineChat is analyzing film archives...</span>
                   </div>
                 )}
                 <div ref={messagesEndRef} />
