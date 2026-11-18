@@ -79,12 +79,19 @@ setInterval(() => {
 
 // ── DB Connection Check Middleware for Database Routes ────────────────────────
 const requireDatabase = (req, res, next) => {
-  if (mongoose.connection.readyState !== 1) {
+  if (!process.env.MONGO_URI) {
     return res.status(503).json({
       message:
-        'Database connection unavailable. Please ensure MONGO_URI is configured in server/.env and MongoDB Atlas or local MongoDB is active.',
+        'Database is not configured. Please set the MONGO_URI environment variable on Render.',
     });
   }
+  if (mongoose.connection.readyState === 0) {
+    return res.status(503).json({
+      message:
+        'Database connection failed. Please ensure MongoDB Atlas Network Access has IP 0.0.0.0/0 whitelisted.',
+    });
+  }
+  // If readyState is 1 (connected) or 2 (connecting), proceed
   next();
 };
 
