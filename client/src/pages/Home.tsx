@@ -1,7 +1,5 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import {
-  getTrending,
-  getTrendingHindi,
   getGenres,
   getMoviesByGenre,
   getHindiMoviesByGenre,
@@ -9,8 +7,9 @@ import {
 } from '../services/tmdb';
 import MovieCard from '../components/MovieCard';
 import GlassyCarousel, { type GlassyCarouselItem } from '../components/ui/glassy-coverflow-carousel';
+import tmdbAPI from '../services/tmdb';
 
-// Fallback high-res Unsplash cinematic posters if TMDB image isn't available
+// Fallback high-res cinematic posters
 const FALLBACK_POSTERS = [
   'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=800&auto=format&fit=crop&q=80',
   'https://images.unsplash.com/photo-1509281373149-e957c6296406?w=800&auto=format&fit=crop&q=80',
@@ -19,7 +18,7 @@ const FALLBACK_POSTERS = [
   'https://images.unsplash.com/photo-1574267432553-4b4628081c31?w=800&auto=format&fit=crop&q=80',
 ];
 
-// Red and Black Theme definition matching Moviefy Dark Aesthetic
+// Red & Black Carousel Theme
 const redBlackCarouselTheme: React.CSSProperties = {
   '--color-background': '#000000',
   '--color-foreground': '#ffffff',
@@ -33,104 +32,139 @@ const redBlackCarouselTheme: React.CSSProperties = {
   '--carousel-shadow-color': '#dc2626',
 } as React.CSSProperties;
 
+// ── Infinite scroll helper ────────────────────────────────────────────────────
+const fetchPage = async (
+  activeLanguageTab: 'all' | 'hindi',
+  selectedGenre: number | null,
+  page: number
+): Promise<any[]> => {
+  if (selectedGenre) {
+    const fn = activeLanguageTab === 'hindi' ? getHindiMoviesByGenre : getMoviesByGenre;
+    const res = await (fn as any)(selectedGenre, page);
+    return res.data.results || [];
+  }
+  if (activeLanguageTab === 'hindi') {
+    const res = await tmdbAPI.get('/discover/movie', {
+      params: { with_original_language: 'hi', sort_by: 'popularity.desc', region: 'IN', page },
+    });
+    return res.data.results || [];
+  }
+  const res = await tmdbAPI.get('/trending/movie/week', { params: { page } });
+  return res.data.results || [];
+};
+
 const Home = () => {
-  const [trending, setTrending] = useState<any[]>([]);
   const [genres, setGenres] = useState<any[]>([]);
   const [selectedGenre, setSelectedGenre] = useState<number | null>(null);
-  const [genreMovies, setGenreMovies] = useState<any[]>([]);
+  const [activeLanguageTab, setActiveLanguageTab] = useState<'all' | 'hindi'>('all');
+
+  const [movies, setMovies] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
-  const [genreLoading, setGenreLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Hindi / Bollywood content
-  const [activeLanguageTab, setActiveLanguageTab] = useState<'all' | 'hindi'>('all');
-  const [hindiMovies, setHindiMovies] = useState<any[]>([]);
-  const [hindiLoading, setHindiLoading] = useState(false);
+  // Sentinel div ref for IntersectionObserver
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
 
+  // ── Initial load: genres + first page ───────────────────────────────────
   useEffect(() => {
-    const fetchData = async () => {
+    const init = async () => {
       try {
         setLoading(true);
         setError(null);
-        const [trendingRes, genreRes] = await Promise.all([
-          getTrending(),
+        const [genreRes, firstPage] = await Promise.all([
           getGenres(),
+          fetchPage(activeLanguageTab, selectedGenre, 1),
         ]);
-        setTrending(trendingRes.data.results || []);
         setGenres(genreRes.data.genres || []);
+        setMovies(firstPage);
+        setPage(2);
+        setHasMore(firstPage.length >= 20);
       } catch (err: any) {
-        console.error('Failed to load TMDB movies:', err);
         setError(
           err.response?.data?.status_message ||
-            'Unable to fetch movies from TMDB. Please check your network and API key.'
+            'Unable to fetch movies. Please check your TMDB API key.'
         );
       } finally {
         setLoading(false);
       }
     };
-    fetchData();
-  }, []);
+    init();
+  }, [activeLanguageTab, selectedGenre]);
 
-  // Fetch Hindi movies when user switches to Hindi tab
-  useEffect(() => {
-    if (activeLanguageTab !== 'hindi' || hindiMovies.length > 0) return;
-    const fetchHindi = async () => {
-      try {
-        setHindiLoading(true);
-        const res = await getTrendingHindi();
-        setHindiMovies(res.data.results || []);
-      } catch (err) {
-        console.error('Failed to load Hindi movies:', err);
-      } finally {
-        setHindiLoading(false);
+  // ── Load next page ────────────────────────────────────────────────────────
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const results = await fetchPage(activeLanguageTab, selectedGenre, page);
+      if (results.length === 0) {
+        setHasMore(false);
+      } else {
+        setMovies((prev) => {
+          // De-duplicate by id
+          const ids = new Set(prev.map((m) => m.id));
+          const fresh = results.filter((m) => !ids.has(m.id));
+          return [...prev, ...fresh];
+        });
+        setPage((p) => p + 1);
+        if (results.length < 20) setHasMore(false);
       }
-    };
-    fetchHindi();
-  }, [activeLanguageTab]);
-
-  useEffect(() => {
-    if (!selectedGenre) {
-      setGenreMovies([]);
-      return;
+    } catch {
+      // Silently stop pagination on error
+      setHasMore(false);
+    } finally {
+      setLoadingMore(false);
     }
-    const fetchByGenre = async () => {
-      try {
-        setGenreLoading(true);
-        const res =
-          activeLanguageTab === 'hindi'
-            ? await getHindiMoviesByGenre(selectedGenre)
-            : await getMoviesByGenre(selectedGenre);
-        setGenreMovies(res.data.results || []);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setGenreLoading(false);
-      }
-    };
-    fetchByGenre();
-  }, [selectedGenre, activeLanguageTab]);
+  }, [activeLanguageTab, selectedGenre, page, loadingMore, hasMore]);
 
-  const displayMovies = selectedGenre
-    ? genreMovies
-    : activeLanguageTab === 'hindi'
-    ? hindiMovies
-    : trending;
+  // ── IntersectionObserver: watch sentinel div ──────────────────────────────
+  useEffect(() => {
+    if (observerRef.current) observerRef.current.disconnect();
 
-  // Selected genre label
-  const selectedGenreName = useMemo(() => {
-    if (activeLanguageTab === 'hindi' && !selectedGenre) return '🎬 Bollywood Trending';
-    if (!selectedGenre) return 'Trending This Week';
-    const found = genres.find((g) => g.id === selectedGenre);
-    return found ? `${found.name} Movies` : 'Selected Genre';
-  }, [selectedGenre, genres, activeLanguageTab]);
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
+          loadMore();
+        }
+      },
+      { rootMargin: '300px' } // start fetching 300 px before sentinel is visible
+    );
 
-  // Convert current filtered movies into Glassy 3D Carousel items
+    if (sentinelRef.current) {
+      observerRef.current.observe(sentinelRef.current);
+    }
+
+    return () => observerRef.current?.disconnect();
+  }, [hasMore, loadingMore, loading, loadMore]);
+
+  // ── Reset on tab / genre change ───────────────────────────────────────────
+  const switchTab = (tab: 'all' | 'hindi') => {
+    setActiveLanguageTab(tab);
+    setSelectedGenre(null);
+    setMovies([]);
+    setPage(1);
+    setHasMore(true);
+  };
+
+  const switchGenre = (genreId: number | null) => {
+    setSelectedGenre(genreId);
+    setMovies([]);
+    setPage(1);
+    setHasMore(true);
+  };
+
+  // ── Carousel items (top 8 of current list) ───────────────────────────────
   const carouselItems: GlassyCarouselItem[] = useMemo(() => {
-    const source = (displayMovies && displayMovies.length > 0) ? displayMovies.slice(0, 8) : [];
-    return source.map((m: any, idx: number) => ({
+    return movies.slice(0, 8).map((m: any, idx: number) => ({
       id: String(m.id || idx),
       title: m.title || 'Untitled',
-      subtitle: `${m.release_date?.slice(0, 4) || '2024'} · Rating: ${m.vote_average ? m.vote_average.toFixed(1) : '7.5'} ★`,
+      subtitle: `${m.release_date?.slice(0, 4) || '2024'} · Rating: ${
+        m.vote_average ? m.vote_average.toFixed(1) : '7.5'
+      } ★`,
       image: m.poster_path
         ? `${TMDB_IMAGE_BASE}${m.poster_path}`
         : FALLBACK_POSTERS[idx % FALLBACK_POSTERS.length],
@@ -140,14 +174,20 @@ const Home = () => {
       linkLabel: 'View Movie Details',
       trailerUrl: 'https://www.youtube.com/watch?v=wb49-oV0F78',
     }));
-  }, [displayMovies]);
+  }, [movies]);
+
+  const selectedGenreName = useMemo(() => {
+    if (activeLanguageTab === 'hindi' && !selectedGenre) return '🎬 Bollywood Trending';
+    if (!selectedGenre) return 'Trending This Week';
+    const found = genres.find((g) => g.id === selectedGenre);
+    return found ? `${found.name} Movies` : 'Selected Genre';
+  }, [selectedGenre, genres, activeLanguageTab]);
 
   return (
     <div className="min-h-screen bg-black text-white">
-      {/* 3D Glassy Coverflow Carousel Section */}
+      {/* 3D Glassy Coverflow Carousel */}
       <section className="relative overflow-hidden border-b border-red-950/40">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-48 bg-gradient-to-b from-red-600/15 via-transparent to-transparent pointer-events-none blur-3xl" />
-        
         {carouselItems.length > 0 ? (
           <GlassyCarousel
             items={carouselItems}
@@ -170,65 +210,54 @@ const Home = () => {
       </section>
 
       {/* Main Browse Section */}
-      <div className="container mx-auto px-4 py-12 max-w-7xl">
+      <div className="container mx-auto px-4 sm:px-6 py-10 max-w-7xl">
         {/* Language Tab Switcher */}
-        <div className="flex items-center gap-2 mb-8">
-          <button
-            onClick={() => { setActiveLanguageTab('all'); setSelectedGenre(null); }}
-            className={`px-4 py-2 rounded-full text-xs font-bold tracking-wider transition-all ${
-              activeLanguageTab === 'all'
-                ? 'bg-red-600 text-white shadow-[0_0_15px_rgba(239,68,68,0.5)] border border-red-500'
-                : 'bg-neutral-900 text-neutral-300 border border-neutral-800 hover:border-red-500/50 hover:text-white'
-            }`}
-          >
-            🌍 Global
-          </button>
-          <button
-            onClick={() => { setActiveLanguageTab('hindi'); setSelectedGenre(null); }}
-            className={`px-4 py-2 rounded-full text-xs font-bold tracking-wider transition-all ${
-              activeLanguageTab === 'hindi'
-                ? 'bg-red-600 text-white shadow-[0_0_15px_rgba(239,68,68,0.5)] border border-red-500'
-                : 'bg-neutral-900 text-neutral-300 border border-neutral-800 hover:border-red-500/50 hover:text-white'
-            }`}
-          >
-            🇮🇳 Bollywood / Hindi
-          </button>
-        </div>
-
-        {/* Header & Genre Filter Bar */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10 pb-6 border-b border-neutral-800">
-          <div>
-            <span className="text-red-500 text-xs font-bold tracking-widest uppercase">
-              Curated Selection
-            </span>
-            <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-white mt-1 flex items-center gap-3">
-              <span className="text-red-500">🔥</span> {selectedGenreName}
-            </h1>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-neutral-400 font-medium">Filter by:</span>
+        <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-1">
+          {(['all', 'hindi'] as const).map((tab) => (
             <button
-              onClick={() => setSelectedGenre(null)}
-              className={`px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all ${
-                !selectedGenre
+              key={tab}
+              onClick={() => switchTab(tab)}
+              className={`px-4 py-2 rounded-full text-xs font-bold tracking-wider transition-all whitespace-nowrap ${
+                activeLanguageTab === tab
                   ? 'bg-red-600 text-white shadow-[0_0_15px_rgba(239,68,68,0.5)] border border-red-500'
                   : 'bg-neutral-900 text-neutral-300 border border-neutral-800 hover:border-red-500/50 hover:text-white'
               }`}
             >
-              {activeLanguageTab === 'hindi' ? 'All Bollywood' : 'All Trending'}
+              {tab === 'all' ? '🌍 Global' : '🇮🇳 Bollywood / Hindi'}
             </button>
-          </div>
+          ))}
         </div>
 
-        {/* Horizontal Genre Buttons */}
-        <div className="flex flex-wrap gap-2.5 mb-12">
+        {/* Header & Genre Filter */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 pb-6 border-b border-neutral-800">
+          <div>
+            <span className="text-red-500 text-xs font-bold tracking-widest uppercase">
+              Curated Selection
+            </span>
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight text-white mt-1 flex items-center gap-3">
+              <span className="text-red-500">🔥</span> {selectedGenreName}
+            </h1>
+          </div>
+          <button
+            onClick={() => switchGenre(null)}
+            className={`self-start px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all whitespace-nowrap ${
+              !selectedGenre
+                ? 'bg-red-600 text-white shadow-[0_0_15px_rgba(239,68,68,0.5)] border border-red-500'
+                : 'bg-neutral-900 text-neutral-300 border border-neutral-800 hover:border-red-500/50 hover:text-white'
+            }`}
+          >
+            {activeLanguageTab === 'hindi' ? 'All Bollywood' : 'All Trending'}
+          </button>
+        </div>
+
+        {/* Genre Pills */}
+        <div className="flex flex-wrap gap-2 mb-10">
           {genres.map((g) => {
             const isSelected = selectedGenre === g.id;
             return (
               <button
                 key={g.id}
-                onClick={() => setSelectedGenre(g.id)}
+                onClick={() => switchGenre(g.id)}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-300 ${
                   isSelected
                     ? 'bg-red-600 text-white font-bold shadow-[0_0_15px_rgba(239,68,68,0.5)] border border-red-500 scale-105'
@@ -242,7 +271,7 @@ const Home = () => {
         </div>
 
         {/* Movies Grid */}
-        {loading || genreLoading || hindiLoading ? (
+        {loading ? (
           <div className="py-24 text-center">
             <div className="w-10 h-10 border-4 border-red-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
             <p className="text-neutral-400 text-sm">Loading cinematic collection...</p>
@@ -252,16 +281,36 @@ const Home = () => {
             <p className="font-bold text-base mb-1">Failed to load movies</p>
             <p className="text-xs text-neutral-300">{error}</p>
           </div>
-        ) : displayMovies.length === 0 ? (
+        ) : movies.length === 0 ? (
           <div className="py-20 text-center text-neutral-400 bg-neutral-950/50 rounded-2xl border border-neutral-900">
             <p className="text-lg font-medium">No movies found for this category.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-5">
-            {displayMovies.map((movie) => (
-              <MovieCard key={movie.id} movie={movie} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
+              {movies.map((movie) => (
+                <MovieCard key={`${movie.id}-${movie.title}`} movie={movie} />
+              ))}
+            </div>
+
+            {/* Infinite Scroll Sentinel */}
+            <div ref={sentinelRef} className="h-4 mt-8" aria-hidden="true" />
+
+            {/* Loading more indicator */}
+            {loadingMore && (
+              <div className="flex items-center justify-center gap-3 py-8">
+                <div className="w-6 h-6 border-3 border-red-600 border-t-transparent rounded-full animate-spin" />
+                <span className="text-neutral-400 text-sm">Loading more films...</span>
+              </div>
+            )}
+
+            {/* End of content */}
+            {!hasMore && movies.length > 0 && (
+              <p className="text-center text-neutral-600 text-xs py-8">
+                ✦ You've reached the end of the collection ✦
+              </p>
+            )}
+          </>
         )}
       </div>
     </div>

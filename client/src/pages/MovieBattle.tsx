@@ -77,6 +77,14 @@ export const MovieBattle: React.FC = () => {
   const revenueWinner = movie1 && movie2 ? getWinnerBadge(movie1.revenue, movie2.revenue) : null;
   const voteCountWinner = movie1 && movie2 ? getWinnerBadge(movie1.vote_count, movie2.vote_count) : null;
 
+  // Tally overall champion
+  const scores = { m1: 0, m2: 0 };
+  [ratingWinner, revenueWinner, voteCountWinner].forEach((w) => {
+    if (w === 'm1') scores.m1++;
+    else if (w === 'm2') scores.m2++;
+  });
+  const champion = scores.m1 > scores.m2 ? 'm1' : scores.m2 > scores.m1 ? 'm2' : 'tie';
+
   return (
     <div className="min-h-screen bg-black text-white px-4 sm:px-6 py-10 max-w-6xl mx-auto">
       {/* Header */}
@@ -334,6 +342,23 @@ export const MovieBattle: React.FC = () => {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Champion Banner */}
+          <div className={`p-5 border-t border-neutral-900 text-center ${champion === 'tie' ? 'bg-neutral-900/30' : 'bg-gradient-to-r from-amber-950/30 via-neutral-900/40 to-amber-950/30'}`}>
+            {champion === 'tie' ? (
+              <p className="text-sm font-bold text-neutral-400">🤝 It's a Tie! Both films are equally matched.</p>
+            ) : (
+              <div>
+                <p className="text-xs text-amber-400 font-bold uppercase tracking-widest mb-1">🏆 CineSphere Arena Champion</p>
+                <p className="text-lg sm:text-2xl font-black text-white">
+                  {champion === 'm1' ? movie1.title : movie2.title}
+                </p>
+                <p className="text-xs text-neutral-400 mt-1">
+                  Wins {champion === 'm1' ? scores.m1 : scores.m2} out of 3 key metrics
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

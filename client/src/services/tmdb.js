@@ -46,18 +46,21 @@ export const getMovieCredits = (id) => tmdbAPI.get(`/movie/${id}/credits`);
 // Get similar movies
 export const getSimilarMovies = (id) => tmdbAPI.get(`/movie/${id}/similar`);
 
-// Get movies by genre (all languages)
-export const getMoviesByGenre = (genreId) =>
-  tmdbAPI.get('/discover/movie', { params: { with_genres: genreId, sort_by: 'popularity.desc' } });
+// Get movies by genre (all languages) — supports optional page for infinite scroll
+export const getMoviesByGenre = (genreId, page = 1) =>
+  tmdbAPI.get('/discover/movie', {
+    params: { with_genres: genreId, sort_by: 'popularity.desc', page },
+  });
 
-// Get Hindi / Bollywood movies by genre using TMDB discover
-export const getHindiMoviesByGenre = (genreId) =>
+// Get Hindi / Bollywood movies by genre — supports optional page
+export const getHindiMoviesByGenre = (genreId, page = 1) =>
   tmdbAPI.get('/discover/movie', {
     params: {
       with_genres: genreId || undefined,
       with_original_language: 'hi',
       sort_by: 'popularity.desc',
       region: 'IN',
+      page,
     },
   });
 

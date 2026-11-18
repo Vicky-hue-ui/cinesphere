@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, Send, Sparkles, X, Film, Loader2 } from 'lucide-react';
+import { Bot, Send, Sparkles, X, Film, Loader2, ChevronDown } from 'lucide-react';
 import axiosInstance from '../services/axiosInstance';
 import { Link } from 'react-router-dom';
 
@@ -9,54 +9,79 @@ interface Message {
   recommendations?: string[];
 }
 
+// Simple inline markdown renderer for bold text
+const renderMarkdown = (text: string): React.ReactNode => {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part: string, i: number) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return (
+        <strong key={i} className="text-white font-bold">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+};
+
 export const CineChat: React.FC = () => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [input, setInput] = useState('');
+  const [isOpen, setIsOpen] = useState<boolean>(false);
+  const [isMinimized, setIsMinimized] = useState<boolean>(false);
+  const [input, setInput] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([
     {
       sender: 'ai',
-      text: "Hello! I am **CineChat**, your CineSphere AI film consultant. Tell me what mood, genre, or vibe you are craving today, and I'll tailor the perfect recommendation!",
+      text: "Hello! I'm **CineChat**, your CineSphere AI film consultant powered by Gemini. Tell me what mood, genre, director, or vibe you're craving today and I'll craft the perfect recommendation!",
     },
   ]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<boolean>(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const scrollToBottom = () => {
+  const scrollToBottom = (): void => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   useEffect(() => {
-    if (isOpen) scrollToBottom();
-  }, [messages, isOpen]);
+    if (isOpen && !isMinimized) {
+      scrollToBottom();
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, [messages, isOpen, isMinimized]);
 
-  const handleSend = async (e?: React.FormEvent) => {
+  const handleSend = async (e?: React.FormEvent): Promise<void> => {
     if (e) e.preventDefault();
     if (!input.trim() || loading) return;
 
     const userMsg = input.trim();
     setInput('');
-    setMessages((prev) => [...prev, { sender: 'user', text: userMsg }]);
+    const updatedMessages: Message[] = [...messages, { sender: 'user', text: userMsg }];
+    setMessages(updatedMessages);
     setLoading(true);
 
     try {
       const res = await axiosInstance.post('/ai/chat', {
         message: userMsg,
+        history: updatedMessages.slice(-6).map((m: Message) => ({
+          sender: m.sender,
+          text: m.text,
+        })),
       });
 
-      setMessages((prev) => [
+      setMessages((prev: Message[]) => [
         ...prev,
         {
           sender: 'ai',
-          text: res.data.reply,
-          recommendations: res.data.recommendations,
+          text: res.data.reply || 'I found some great picks for you!',
+          recommendations: res.data.recommendations || [],
         },
       ]);
-    } catch (err) {
-      setMessages((prev) => [
+    } catch {
+      setMessages((prev: Message[]) => [
         ...prev,
         {
           sender: 'ai',
-          text: "I'm having trouble connecting to CineSphere's AI servers right now. Please ensure the backend is running, or try again shortly!",
+          text: "I'm having trouble connecting right now. Please ensure the backend server is running on port 5000 and try again!",
         },
       ]);
     } finally {
@@ -64,11 +89,17 @@ export const CineChat: React.FC = () => {
     }
   };
 
-  const samplePrompts = [
-    'Recommend a mind-bending sci-fi thriller',
-    'Best dark comedy for movie night',
-    'Heartfelt romantic drama like Past Lives',
-    'High-octane action with incredible stuntwork',
+  const handlePromptClick = (prompt: string): void => {
+    setInput(prompt);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
+  const samplePrompts: string[] = [
+    'Mind-bending sci-fi thriller',
+    'Best dark comedies 2024',
+    'Heartfelt drama like Past Lives',
+    'High-octane action stunts',
+    'Hidden gem Bollywood films',
   ];
 
   return (
@@ -76,118 +107,152 @@ export const CineChat: React.FC = () => {
       {/* Floating Toggle Button */}
       {!isOpen && (
         <button
-          onClick={() => setIsOpen(true)}
-          className="fixed bottom-6 left-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold text-sm shadow-[0_0_25px_rgba(239,68,68,0.5)] hover:shadow-[0_0_35px_rgba(239,68,68,0.7)] transition-all hover:scale-105 active:scale-95 border border-red-400/40"
+          type="button"
+          onClick={() => { setIsOpen(true); setIsMinimized(false); }}
+          className="fixed bottom-6 left-4 sm:left-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold text-sm shadow-[0_0_25px_rgba(239,68,68,0.5)] hover:shadow-[0_0_35px_rgba(239,68,68,0.7)] transition-all hover:scale-105 active:scale-95 border border-red-400/40"
+          aria-label="Open CineChat AI"
         >
           <div className="relative">
             <Bot size={20} />
             <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-400 rounded-full animate-ping" />
           </div>
-          <span>CineChat AI</span>
+          <span className="hidden sm:inline">CineChat AI</span>
         </button>
       )}
 
-      {/* Floating Chat Modal */}
+      {/* Chat Panel */}
       {isOpen && (
-        <div className="fixed bottom-6 left-6 z-50 w-[90vw] sm:w-[420px] h-[550px] max-h-[85vh] bg-neutral-950/95 border border-red-900/50 rounded-3xl shadow-[0_15px_50px_rgba(220,38,38,0.3)] backdrop-blur-xl flex flex-col overflow-hidden text-white animate-in slide-in-from-bottom-6 duration-300">
-          
+        <div
+          className={`fixed bottom-4 left-3 sm:left-6 z-50 w-[calc(100vw-24px)] sm:w-[420px] bg-neutral-950/97 border border-red-900/50 rounded-3xl shadow-[0_15px_60px_rgba(220,38,38,0.35)] backdrop-blur-xl flex flex-col overflow-hidden text-white transition-all duration-300 ${
+            isMinimized ? 'h-[60px]' : 'h-[560px] max-h-[85vh]'
+          }`}
+        >
           {/* Header */}
-          <div className="p-4 border-b border-neutral-900 bg-neutral-900/40 flex items-center justify-between">
+          <div className="flex-shrink-0 px-4 py-3 border-b border-neutral-900 bg-neutral-900/50 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-red-600 to-rose-500 flex items-center justify-center text-white shadow-md">
-                <Bot size={20} />
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-red-600 to-rose-500 flex items-center justify-center shadow-md">
+                <Bot size={18} />
               </div>
               <div>
                 <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                  CineChat AI <Sparkles size={14} className="text-red-400" />
+                  CineChat AI <Sparkles size={12} className="text-red-400" />
                 </h3>
-                <p className="text-[10px] text-neutral-400">Intelligent CineSphere Assistant</p>
+                <p className="text-[10px] text-emerald-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full inline-block" />
+                  Gemini 2.5 Flash · Online
+                </p>
               </div>
             </div>
-            <button
-              onClick={() => setIsOpen(false)}
-              className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition"
-            >
-              <X size={18} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setIsMinimized((m: boolean) => !m)}
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition"
+                title={isMinimized ? 'Expand' : 'Minimize'}
+              >
+                <ChevronDown
+                  size={16}
+                  className={`transition-transform ${isMinimized ? 'rotate-180' : ''}`}
+                />
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition"
+                title="Close"
+              >
+                <X size={16} />
+              </button>
+            </div>
           </div>
 
-          {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3.5 text-xs sm:text-sm">
-            {messages.map((m, idx) => (
-              <div
-                key={idx}
-                className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}
-              >
-                <div
-                  className={`max-w-[85%] rounded-2xl p-3.5 leading-relaxed whitespace-pre-wrap ${
-                    m.sender === 'user'
-                      ? 'bg-red-600 text-white rounded-br-sm shadow-md'
-                      : 'bg-neutral-900/90 text-neutral-200 border border-neutral-800/80 rounded-bl-sm shadow-inner'
-                  }`}
-                >
-                  {m.text}
-                </div>
+          {!isMinimized && (
+            <>
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 text-xs sm:text-sm scroll-smooth">
+                {messages.map((m: Message, idx: number) => (
+                  <div
+                    key={idx}
+                    className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}
+                  >
+                    <div
+                      className={`max-w-[88%] rounded-2xl px-3.5 py-3 leading-relaxed ${
+                        m.sender === 'user'
+                          ? 'bg-red-600 text-white rounded-br-sm'
+                          : 'bg-neutral-900/90 text-neutral-200 border border-neutral-800/80 rounded-bl-sm'
+                      }`}
+                    >
+                      <div className="whitespace-pre-wrap">{renderMarkdown(m.text)}</div>
+                    </div>
 
-                {/* Quick Search Links if AI returned recommended titles */}
-                {m.recommendations && m.recommendations.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {m.recommendations.map((title, i) => (
-                      <Link
-                        key={i}
-                        to={`/search`}
-                        state={{ query: title }}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-900 hover:bg-red-950/60 border border-neutral-800 hover:border-red-600 text-[11px] text-neutral-300 hover:text-white transition"
-                      >
-                        <Film size={11} className="text-red-400" /> {title}
-                      </Link>
-                    ))}
+                    {/* Movie Quick-Search Pills */}
+                    {m.recommendations && m.recommendations.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2 max-w-[90%]">
+                        {m.recommendations.map((title: string, i: number) => (
+                          <Link
+                            key={i}
+                            to="/search"
+                            state={{ query: title }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-900 hover:bg-red-950/60 border border-neutral-800 hover:border-red-600 text-[10px] text-neutral-300 hover:text-white transition"
+                          >
+                            <Film size={10} className="text-red-400 flex-shrink-0" />
+                            <span className="truncate max-w-[120px]">{title}</span>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {loading && (
+                  <div className="flex items-center gap-2 text-[11px] text-neutral-400 bg-neutral-900/70 px-3 py-2.5 rounded-2xl w-fit border border-neutral-800">
+                    <Loader2 size={13} className="animate-spin text-red-500" />
+                    <span>CineChat is scanning the archives...</span>
                   </div>
                 )}
+                <div ref={messagesEndRef} />
               </div>
-            ))}
 
-            {loading && (
-              <div className="flex items-center gap-2 text-xs text-neutral-400 bg-neutral-900/60 p-3 rounded-2xl w-fit border border-neutral-800">
-                <Loader2 size={14} className="animate-spin text-red-500" />
-                <span>CineChat is analyzing film archives...</span>
+              {/* Quick Prompt Chips */}
+              <div className="flex-shrink-0 px-3 py-2 bg-neutral-900/30 border-t border-neutral-900 overflow-x-auto scrollbar-none">
+                <div className="flex gap-1.5 whitespace-nowrap">
+                  {samplePrompts.map((p: string, idx: number) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handlePromptClick(p)}
+                      className="text-[10px] sm:text-[11px] px-2.5 py-1 rounded-full bg-neutral-900 text-neutral-400 hover:text-white hover:bg-neutral-800 border border-neutral-800 transition flex-shrink-0"
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
               </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
 
-          {/* Quick Prompts Bar */}
-          <div className="px-3 py-1.5 bg-neutral-900/30 border-t border-neutral-900/80 overflow-x-auto whitespace-nowrap flex gap-1.5 scrollbar-none">
-            {samplePrompts.map((p, idx) => (
-              <button
-                key={idx}
-                onClick={() => {
-                  setInput(p);
-                }}
-                className="text-[11px] px-2.5 py-1 rounded-full bg-neutral-900 text-neutral-400 hover:text-white hover:bg-neutral-800 border border-neutral-800 transition flex-shrink-0"
+              {/* Input Bar */}
+              <form
+                onSubmit={handleSend}
+                className="flex-shrink-0 p-3 bg-neutral-950 border-t border-neutral-900 flex gap-2"
               >
-                {p}
-              </button>
-            ))}
-          </div>
-
-          {/* Input Bar */}
-          <form onSubmit={handleSend} className="p-3 bg-neutral-950 border-t border-neutral-900 flex gap-2">
-            <input
-              type="text"
-              placeholder="Ask CineChat for a movie or vibe..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              className="flex-1 bg-neutral-900 border border-neutral-800 focus:border-red-600 text-white placeholder:text-neutral-500 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm outline-none transition"
-            />
-            <button
-              type="submit"
-              disabled={loading || !input.trim()}
-              className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:hover:bg-red-600 text-white font-bold transition flex items-center justify-center shadow-[0_0_15px_rgba(239,68,68,0.4)]"
-            >
-              <Send size={15} />
-            </button>
-          </form>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  placeholder="Ask for a movie, mood, or vibe..."
+                  value={input}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInput(e.target.value)}
+                  className="flex-1 bg-neutral-900 border border-neutral-800 focus:border-red-600 text-white placeholder:text-neutral-500 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm outline-none transition"
+                />
+                <button
+                  type="submit"
+                  disabled={loading || !input.trim()}
+                  className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold transition flex items-center justify-center shadow-[0_0_15px_rgba(239,68,68,0.4)]"
+                  aria-label="Send message"
+                >
+                  <Send size={15} />
+                </button>
+              </form>
+            </>
+          )}
         </div>
       )}
     </>
